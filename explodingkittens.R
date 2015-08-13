@@ -17,9 +17,6 @@ playerNames = ""
 alive = ""
 
 actions = ""
-DiscardPile = ""
-
-Turns = ""
 
 deadcount = 0
 
@@ -64,7 +61,6 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
   alive <<- playerNames
   Players[[1]][1] <<- "TURN"
   actions <<- "Start Turn"
-  DiscardPile <<- ""
   Turns <<- data.frame(PlayerTurn = playerNames[1], Actions = actions, ExplodeProbability = 0)
   #gameStart = list(Deck = setupdeck, Players = playerList)
   #return(gameStart)
@@ -117,9 +113,13 @@ EndTurn <- function(player, explode = F, dead = F, attack = F) {
     actions <<- "Start Turn"
   }
   
-  #if I exploded, PlaceKitten
+  #if I exploded and defused (dd not die), PlaceKitten
   if (explode) {
-    PlaceKitten()
+    if (dead) {
+      PlaceKitten(dead = T)
+    } else {
+      PlaceKitten()
+    }
   }
   
   #if previous turn (either my current turn or the turn before mine if i am dead) ended with an attack, 
@@ -142,8 +142,12 @@ EndTurn <- function(player, explode = F, dead = F, attack = F) {
 
 Discard <- function(player, cards) {
   for (i in cards) {
-    Players[[player]] <<- Players[[player]][-match(i, Players[[player]])]
-    DiscardPile <<- c(DiscardPile, i)
+    if (exists("DiscardPile")) {
+      Players[[player]] <<- Players[[player]][-match(i, Players[[player]])]
+      DiscardPile <<- c(DiscardPile, i)
+    } else {
+      DiscardPile <<- cards
+    }
   }
 }
 
@@ -157,6 +161,7 @@ Draw <- function(player) {
     actions <<- c(actions, "Draw", "Exploded")
     Discard(player, Players[[player]][2:length(Players[[player]])])
     print("you exploded")
+    #PlaceKitten(dead = T)
     #PlaceKitten(player)
     EndTurn(player, explode = T, dead = T)
   } 
@@ -174,14 +179,23 @@ Draw <- function(player) {
   }
 }
 
-PlaceKitten <- function() {
+PlaceKitten <- function(dead = F) {
   n = length(Deck)
+  if (dead) {
+    if (exists("DeadKittenPile")) {
+      DeadKittenPile <<- "EK"
+    } else {
+      DeadKittenPile <<- c(DeadKittenPile, "EK")
+    }
+  }
   print(paste("Deck has ", n, " cards"))
   num <- readline("Where would you like to place the Exploding Kitten? Anything else places it randomly.")
   num = as.numeric(num)
   if(is.na(num)) {
-    Deck <<- c(Deck, "EK")
-    Deck <<- sample(Deck)
+    place = sample(1:length(Deck), size = 1)
+    former = Deck[1:place]
+    latter = Deck[(place+1):n]
+    Deck <<- c(former, "EK", latter)
   } else {
     if (num > n) {
       Deck <<- c(Deck, "EK")
@@ -392,7 +406,7 @@ Steal <- function(player, target, cards) {
     #if (!(cards[1] %in% Players[[player]]) || !(cards[2] %in% Players[[player]]) || !(cards[3] %in% Players[[player]])) {
       stop("you do not have one or more of these cards")
     }
-    actions <<- c(actions, paste("Discarded ", cards, " to steal from ", target, sep = ""))
+    actions <<- c(actions, paste("Discarded ", cards, " to steal from ", target, " ", sep = ""))
     checkNope = CheckNopes(player)
     successNope = F
     if (is.character(checkNope)) {
@@ -402,7 +416,7 @@ Steal <- function(player, target, cards) {
       #actions <<- c(actions, paste(target, " Noped by ", player, sep = ""))
       #Discard(target, cards)
     } else {
-      message = paste(player, ": Enter the card you want to steal from ", target, sep = "")
+      message = paste(player, ": Enter the card you want to steal from ", target, " ", sep = "")
       cd <- readline(message)
       if (!(cd %in% Players[[target]])) {
         print("They do not have this card. Tough luck.")
@@ -435,28 +449,29 @@ Steal <- function(player, target, cards) {
     if (successNope) {
     
     } else {
-    	message = paste(player, ": Enter the card you want to steal from the Discard", sep = "")
+    	message = paste(player, ": Enter the card you want to steal from the Discard: ", sep = "")
     	cd <- readline(message)
     	### make this better
     	if (!(cd %in% DiscardPile)) {
-    		print(paste(cd, " has not been discarded yet.", sep = "")
-    		Stea(player, target, cards)
+    		print(paste(cd, " has not been discarded yet.", sep = ""))
+    		Steal(player, target, cards)
     	} else {
     		actions <<- c(actions, paste("Discarded ", cards, " to steal from ", target, sep = ""))
     		Discard(player, cards)
-        	Players[[target]] <<- Players[[target]][-match(cd, Players[[target]])]
-        	Players[[player]] <<- c(Players[[player]], cd)
+        Players[[target]] <<- Players[[target]][-match(cd, Players[[target]])]
+        Players[[player]] <<- c(Players[[player]], cd)
     	}
     }
   }
 }
 
 #need way to check if "nope" is other than "yes" or "no"
+#player is the player of the cards that may or may not be Nope'd
 CheckNopes <- function(player) {
   otherPlayers = playerNames[playerNames != player]
   for (i in otherPlayers) {
     if ("NO" %in% Players[[i]]){
-      message = "Do you want to play your Nope? Type 'Yes' if you do. Otherwise, type anything else."
+      message = paste(i, " :Do you want to play your Nope? Type 'Yes' if you do. Otherwise, type anything else. ")
       nope <- readline(message)
       if ("Yes" == nope) {
         return(i)
@@ -468,12 +483,18 @@ CheckNopes <- function(player) {
   return(F)
 }
 
+#player is the player who played the Nope
+#target is whom the Nope affects
+#targetCard is the action card(s) being Nope'd
 Nope <- function(player, target, targetCard) {
   Discard(player, "NO")
   checkNope = CheckNopes(player)
   if (is.character(checkNope)) {
     #Nope(target, player, "NO")
-    Nope(checkNope, player, targetCard)
+    #Nope(checkNope, player, targetCard)
+    
+    #Need to maintain the original player of the card
+    Nope(checkNope, target, targetCard)
   } else {
     actions <<- c(actions, paste(target, " Noped by ", player, sep = ""))
     Discard(target, targetCard)
