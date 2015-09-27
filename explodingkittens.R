@@ -5,23 +5,30 @@ deck = c("EK", "EK", "EK", "EK",
          "SK", "SK", "SK", "SK",
          "FA", "FA", "FA", "FA",
          "SH", "SH", "SH", "SH",
-         "SF", "SF", "SF", "SF",
+         "SF", "SF", "SF", "SF", "SF",
          "CC1", "CC2", "CC3", "CC4", "CC5",
          "CC1", "CC2", "CC3", "CC4", "CC5",
          "CC1", "CC2", "CC3", "CC4", "CC5",
          "CC1", "CC2", "CC3", "CC4", "CC5")
-
+         
 Deck = ""
 DiscardPile = ""
-DeadKittenPile = ""
 Players = ""
 playerNames = ""
 alive = ""
-
 actions = ""
+explode_probability = ""
 
-deadcount = 0
-
+# Calculates the probability of a player exploding at any time 
+CalculateExplodeProbability <- function(player) {
+  if ("DF" %in% Players[[player]]) {
+    exprob = 0 
+  } else {
+    num_kittens = length(Players) - deadcount + 1
+    exprob = num_kittens / length(Deck)
+  }
+  return(exprob)
+}
 
 
 #Creates Players, Deals cards, shuffles deck.
@@ -66,465 +73,396 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
   Players[[1]][1] <<- "TURN"
   actions <<- "Start Game"
   Turns <<- data.frame(PlayerTurn = playerNames[1], Actions = actions, ExplodeProbability = 0)
-}
-
-CalculateExplodeProbability <- function(player) {
-	if ("DF" %in% Players[[player]]) {
-   exprob = 0 
-	} else {
-    num_kittens = length(Players) - deadcount + 1
-    exprob = num_kittens / length(Deck)
-	}
-  return(exprob)
-}
-
-EndTurn <- function(player, explode = F, dead = F, attack = F) {
-  #set player number and nextplayernumber
-  doubleturn = (Players[[player]][1] == "DOUBLETURN")
-  playernumber = match(player, playerNames)
-  if (playernumber == length(playerNames)) {
-    nextplayernumber = 1
-  } else {
-    nextplayernumber = playernumber + 1
-  }
-
-  #if i'm not dead or I am recently exploded, append my turn info
-  # ok for now.  Need to change ExplodeProbability values
-  if (!dead || (dead & explode)) {
-    current_exprob = CalculateExplodeProbability(player)
-    if (dead & explode) {
-      current_exprob = NA
-    }
-    turn = cbind(PlayerTurn = player, Actions = actions, ExplodeProbability = current_exprob)
+  
+  order = rep(playerNames, 56)
+  for (i in 1:length(order)) {
+  	p = order[i]
+  	p_next = order[i+1]
+  	if (length(alive) == 1) {	# check if only one person is alive
+  		print(paste(alive, " wins! Everyone else exploded.", sep = ""))
+  		break
+  	} 	
+    turnover = F
+    while (!turnover) {
+    	if (!(Players[[p]][1] %in% c("TURN", "DOUBLETURN"))) {
+  			break
+  		}
+  		print("Your cards:")
+  		print(Players[[p]][-1])
+  		move = readline(paste(p, ": What will you do?", sep = ""))
+  		if (move == "quit") {
+  			stop("quitting game prematurely")
+  		}
+  		turnover = DoMove(move, p, p_next) 
+  	}
+  	if (DiscardPile[length(DiscardPile)] == "DF") {	# if player recently defused
+  		PlaceKitten(p)
+  	}
+  	if (Players[[p]][1] == "DOUBLETURN") {
+  		if (DiscardPile[length(DiscardPile)] == "AT") {
+  			order = c(order[1:i], order[i+2:length(order)])
+  			Players[[p]][1] = "WAIT"
+  		} else {
+  			order = c(order[1:i], p, order[i:length(order)])
+  			Players[[p]][1] = "TURN"	
+  		}
+  	} else {
+  		Players[[p]][1] = "WAIT"
+  		if (Players[[p_next]][1] == "WAIT") {
+  			Players[[p_next]][1] = "TURN"
+  		}
+  	}
+  	turn = cbind(PlayerTurn = player, Actions = actions, ExplodeProbability = explode_probability)
     Turns <<- rbind(Turns, turn)
-  }
-  
-  #if I am dead , ensure I stay dead.  Otherwise, wait for next turn unless i have a double turn from attack.
-  if (dead) {
-    Players[[player]][1] <<- "DEAD"
-    deadcount <<- deadcount + 1
-    alive <<- alive[alive != player]
-  } else {
-    if (doubleturn) {
-      Players[[player]][1] <<- "TURN"
-    } else {
-      Players[[player]][1] <<- "WAIT"
-    }
-  }
-  
-  ### Check if everyone is dead
-  if (deadcount == (length(playerNames)-1)) {
-    print(paste(alive, " wins!Everyone else exploded.", sep = ""))
-    stop("Game Over") 
-  } else {
-    actions <<- "Start Turn"
-  }
-  
-  #if I exploded and defused (did not die), PlaceKitten
-  if (explode) {
-    if (dead) {
-      PlaceKitten(dead = T)
-    } else {
-      PlaceKitten()
-    }
-  }
-  
-  #if previous turn (either my current turn or the turn before mine if i am dead) ended with an attack, 
-  #check if the next player is dead. if they are, attack the next player.
-  if (attack) {
-    Players[[player]][1] <<- "WAIT"
-    if (Players[[nextplayernumber]][1] == "DEAD") {
-      EndTurn(names(Players)[nextplayernumber], dead = T, attack = T)
-    } else {
-      DoubleTurn(playerNames[nextplayernumber])
-    } 
-  } else {
-    if (doubleturn) {
-      Players[[nextplayernumber]][1] <<- "WAIT"
-    } else {
-      Players[[nextplayernumber]][1] <<- "TURN"
-    }
-  }
+    Turns <<- rbind(Turns, turn)
+	}
+	print("Game Over.")
+}
+
+DoMove <- function(move, player, nextplayer) {
+	if (!(move %in% c("draw", "attack", "skip", 
+					   "favor", "shuffle", 
+					   "see the future", "steal"))) {
+		print("invalid move")
+		return(F)			   	
+	}
+	if (move == "draw") {
+		return(Draw(player))
+	}
+	if (move == "attack") {
+		return(Attack(player, nextplayer))
+	}
+	if (move == "skip") {
+		return(Skip(player))
+	}
+	if (move == "favor") {
+		return(Favor(player))
+	}
+	if (move == "shuffle") {
+		return(Shuffle(player))
+	}
+	if (move == "see the future") {
+		return(SeeTheFuture(player))
+	}
+	if (move == "steal") {
+		return(Steal(player))
+	}
 }
 
 Discard <- function(player, cards) {
   for (i in cards) {
     Players[[player]] <<- Players[[player]][-match(i, Players[[player]])]
     if (DiscardPile[1] != "") {
-      DiscardPile <<- c(DiscardPile, i)
+      DiscardPile <<- c(i, DiscardPile)
     } else {
       DiscardPile <<- cards
     }
   }
 }
 
-Draw <- function(player) {
-  if(!(player %in% playerNames) || Players[[player]][1] == "WAIT") {
-    stop("not your turn")
-  }
-  nextcard = Deck[1]
-  Deck <<- Deck[-1]
-  if (nextcard == "EK" & !("DF" %in% Players[[player]])) {
-    actions <<- c(actions, "Draw", "Exploded")
-    Discard(player, Players[[player]][2:length(Players[[player]])])
-    print("you exploded")
-    #PlaceKitten(dead = T)
-    #PlaceKitten(player)
-    EndTurn(player, explode = T, dead = T)
-  } 
-  if (nextcard == "EK" & ("DF" %in% Players[[player]])) {
-    Discard(player, "DF")
-    actions <<- c(actions, "Draw", "Defuse")
-    print("you ALMOST exploded")
-    #PlaceKitten(player)
-    EndTurn(player, explode = T, dead = F)
-  }
-  if (nextcard != "EK") {
-    Players[[player]] <<- c(Players[[player]], nextcard)
-    actions <<- c(actions, "Draw", "End Turn")
-    EndTurn(player)
-  }
+Draw <- function(player, nextplayer) {
+	nextcard = Deck[1]
+  	Deck <<- Deck[-1]
+  	if (nextcard == "EK" & !("DF" %in% Players[[player]])) {
+  		print("You exploded. That's ok.  All kittens go to heaven.")
+  		Discard(player, Players[[player]][2:length(Players[[player]])])
+  		DiscardPile <<- c("EK", DiscardPile)
+  		Players[[player]][1] <<- "DEAD"
+    	deadcount <<- deadcount + 1
+    	alive <<- alive[alive != player]
+  		actions <<- c(actions, "Draw", "Exploded", "End Turn")
+  		explode_probability <<- c(explode_probability, NA)
+  	}
+  	if (nextcard == "EK" & ("DF" %in% Players[[player]])) {
+  		Discard(player, "DF")
+  		print("you ALMOST exploded. Hang in there. You're playing with kittens and you're still alive")
+  		actions <<- c(actions, "Draw", "Defuse", "End Turn")
+  		current_prob = CalculateExplodeProbability(p)
+  		explode_probability <<- c(explode_probability, current_prob)
+  	}
+  	if (nextcard != "EK") {
+  		Players[[player]] <<- c(Players[[player]], nextcard)
+  		actions <<- c(actions, "Draw", "End Turn")
+  		current_prob = CalculateExplodeProbability(player)
+  		explode_probability <<- c(explode_probability, current_prob)
+  	}
+  	return(T)
 }
 
-PlaceKitten <- function(dead = F) {
-  n = length(Deck)
-  if (dead) {
-    if (DeadKittenPile[1] == "") {
-      DeadKittenPile <<- "EK"
-    } else {
-      DeadKittenPile <<- c(DeadKittenPile, "EK")
-    }
-  } else {
-    print(paste("Deck has ", n, " cards"))
-    num <- readline("Where would you like to place the Exploding Kitten? Anything else places it randomly.")
-    num = as.numeric(num)
-    if(is.na(num)) {
-      place = sample(1:length(Deck), size = 1)
-      former = Deck[1:place]
-      latter = Deck[(place+1):n]
-      Deck <<- c(former, "EK", latter)
-    } else {
-      if (num > n) {
-        Deck <<- c(Deck, "EK")
+Nope <- function(player, count = 0) {
+	p = CheckNopes(player)
+	if (p == "None") {
+		return(F)
+	} else {
+		return(PlayNopes(p, player, count))
+	}
+}
+
+CheckNopes <- function(player) {
+	otherPlayers = playerNames[playerNames != player]
+	for (i in otherPlayers) {
+    if ("NO" %in% Players[[i]]) {
+      message = paste(i, " :Do you want to play your Nope? Type 'Yes' if you do. Otherwise, type anything else. ")
+      reply <- readline(message)
+      if ("yes" == reply) {
+      	return(i)
       } else {
-        if (num <= 1 ) {
-          Deck <<- c("EK", Deck)
-        } else {
-          former = Deck[1:(num-1)]
-          latter = Deck[(num+1):n]
-          Deck <<- c(former, "EK", latter)
-        }
+      	return("None")
       }
     }
   }
 }
 
-Attack <- function(player) {
-  if(!(player %in% playerNames) || Players[[player]][1] == "WAIT") {
-    stop("not your turn")
-  }
-  if (!("AT" %in% Players[[player]])) {
-    stop("you do not have an Attack card")
-  }
-  actions <<- c(actions, "Attack")
-  checkNope = CheckNopes(player)
-  successNope = F
-  if (is.character(checkNope)) {
-    print(checkNope)
-    successNope = Nope(checkNope, player, "AT", 1)
-  } 
-  if (successNope) {
-    print("oh well")
-    Discard(player, "AT")
-  } else {
-    Discard(player, "AT")
-    EndTurn(player, attack = T)  
-  }
+PlayNopes <- function(noper, player, count) {
+	Discard(noper, "NO")
+	actions <<- c(actions, paste(noper, " plays Nope", sep = ""))
+	current_prob = CalculateExplodeProbability(player)
+  explode_probability <<- c(explode_probability, current_prob)
+	count = count + 1
+	p = CheckNopes(noper)
+	if (p == "None") {
+		if (!(is.integer(count/2))) {
+			return(F)
+		} else {
+			print("Previous action DENIED")
+			return(T)
+		}
+	} else {
+		return(PlayNopes(p, player, count))
+	}
 }
 
-DoubleTurn <- function(player) {
-  Players[[player]][1] <<- "DOUBLETURN"
+
+Attack <- function(player, nextplayer) {
+	if (!("AT" %in% Players[[player]])) {
+		print("you do not have an Attack card")
+		return(F)
+    }
+    actions <<- c(actions, "Attack")
+    Discard(player, "AT")
+    isNope <- Nope(player, count = 0)
+    if (isNope) {
+    	return(F)
+    } else {
+    	Players[[nextplayers]][1] = "DOUBLETURN"
+    }
+  	current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
+    return(T)
 }
 
 Skip <- function(player) {
-  if(!(player %in% playerNames) || Players[[player]][1] == "WAIT") {
-    stop("not your turn")
-  }
-  if (!("SK" %in% Players[[player]])) {
-    stop("you do not have an Skip card")
-  }
-  actions <<- c(actions, "Skip")
-  checkNope = CheckNopes(player)
-  successNope = F
-  if (is.character(checkNope)) {
-    print(checkNope)
-    successNope = Nope(checkNope, player, "SK", 1)
-  } 
-  if (successNope) {
-    print("oh well")
-    Discard(player, "SK")
-  } else {
-    Discard(player, "SK")
-    EndTurn(player)  
-  }
+	if (!("SK" %in% Players[[player]])) {
+    	print("you do not have an Skip card")
+    	return(F)
+  	}
+  	actions <<- c(actions, "Skip")
+  	Discard(player, "SK")
+  	isNope <- Nope(player, count = 0)
+    if (isNope) {
+    	return(F)
+    }
+  	current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
+    return(T)
 }
-
-Favor <- function(player, target) {
-  if(!(player %in% playerNames) || Players[[player]][1] == "WAIT") {
-    stop("not your turn")
-  }
-  if (!("FA" %in% Players[[player]])) {
-    stop("you do not have an Favor card")
-  }
-  otherPlayers = playerNames[playerNames != player]
-  if(!(target %in% otherPlayers)) {
-    stop("no favors given here")
-  }
-  if (Players[[target]][1] == "DEAD" || length(Players[[target]]) < 2) {
-    stop("this player is dead or has no cards to steal")
-  }
-  actions <<- c(actions, paste("Favor from ", target, sep = ""))
-  checkNope = CheckNopes(player)
-  successNope = F
-  if (is.character(checkNope)) {
-    print(checkNope)
-    successNope = Nope(checkNope, player, "FA", 1)
-  } 
-  if (successNope) {
-    Discard(player, "FA")
-    print("oh well")
-  } else {
-    message = paste(target, ": Enter a card to give to ", player, sep = "")
-    card <- readline(message)
-    if (!(card %in% Players[[target]])) {
-      print("You do not have this card.")
-      Favor(player, target)
-    } 
-      Discard(player, "FA")
-      Players[[target]] <<- Players[[target]][-match(card, Players[[target]])]
-      Players[[player]] <<- c(Players[[player]], card)
-  }
+    
+Favor <- function(player, target = "") {
+	if (!("FA" %in% Players[[player]])) {
+    	print("you do not have a Favor card")
+    	return(F)
+  	}
+  	if (target == "") {
+  		otherPlayers = playerNames[playerNames != player]
+  		print("Players:")
+  		print(otherPlayers)
+  		message1 = "Who would you like a favor from?"
+  		t <- readline(message1)
+  		if (!(target %in% otherPlayers) || Players[[target]][1] == "DEAD" || length(Players[[target]]) < 2) {
+  			print("Cannot get a favor from this player")
+  			return(F)
+  		}
+  	} else {
+  		t = target
+  	}
+	actions <<- c(actions, "Favor")
+  	Discard(player, "FA")
+  	isNope <- Nope(player, count = 0)
+    if (isNope) {
+    	return(F)
+    } else {
+    	print(paste(t, "'s cards:"))
+  		print(Players[[t]][-1])
+    	message2 = paste(t, ": Enter a card to give to ", player, sep = "")
+    	card <- readline(message2)
+    	if (!(card %in% Players[[t]])) {
+    		print("You do not have this card.")
+    		return(Favor(player, target = t))
+    	} else {
+    		Players[[t]] <<- Players[[t]][-match(card, Players[[t]])]
+    		Players[[player]] <<- c(Players[[player]], card)
+    	}  	
+    }
+    current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
+  	return(F)
 }
 
 Shuffle <- function(player) {
-  if(!(player %in% playerNames) || Players[[player]][1] == "WAIT") {
-    stop("not your turn")
-  }
-  if (!("SH" %in% Players[[player]])) {
-    stop("you do not have an Shuffle card")
-  }
-  actions <<- c(actions, "Shuffle")
-  checkNope = CheckNopes(player)
-  successNope = F
-  if (is.character(checkNope)) {
-    print(checkNope)
-    successNope = Nope(checkNope, player, "SH", 1)
-  } 
-  if (successNope) {
-    print("oh well")
-    Discard(player, "SH")
-  } else {
+	if (!("SH" %in% Players[[player]])) {
+    	print("you do not have a Shuffle card")
+    	return(F)
+  	}
+  	actions <<- c(actions, "Shuffle")
+  	Discard(player, "SH")
+  	isNope <- Nope(player, count = 0)
+    if (isNope) {
+    	return(F)
+    } 
     Deck <<- sample(Deck)
-    Discard(player, "SH")
-  }
+    print("Deck is shuffled")
+    current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
+    return(F)
 }
 
 SeeTheFuture <- function(player) {
-  if(!(player %in% playerNames) || Players[[player]][1] == "WAIT") {
-    stop("not your turn")
-  }
-  if (!("SF" %in% Players[[player]])) {
-    stop("you do not have an See the Future card")
-  }
-  actions <<- c(actions, "See The Future")
-  checkNope = CheckNopes(player)
-  successNope = F
-  if (is.character(checkNope)) {
-    print(checkNope)
-    successNope = Nope(checkNope, player, cards, 1)
-  } 
-  if (successNope) {
-    print("oh well")
-    Discard(player, "SF")
-  } else {
-      print("EVERYONE LOOK AWAY")
-      print(Deck[1:3])
-      Discard(player, "SF")
-  }
+	if (!("SF" %in% Players[[player]])) {
+    	print("you do not have a See the Future card")
+    	return(F)
+  	}
+  	actions <<- c(actions, "See the Future")
+  	Discard(player, "SF")
+  	isNope <- Nope(player, count = 0)
+    if (isNope) {
+    	return(F)
+    } 
+    print("FOR PRIVATE VIEWING ONLY")
+    print(Deck[1:3])
+    current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
+    return(F)
 }
 
-CheckCardSet <- function(set, hand) {
-  if (length(set) == 1) {
-    if (set[1] %in% hand) {
-      return(T)
-    } else {
-      return(F)
-    }
-  }
-  if (length(set) > 1) {
-	  for (i in 1:length(hand)) {
-		  if (set[1] == hand[i])	{
-			  result = CheckCardSet(set[-1], hand[-i])
-		  } 
-	  }
-    return(result)
-  }
-}
-
-# Have not yet implemented steal from discard
-Steal <- function(player, target, cards) {
-  if(!(player %in% playerNames) || Players[[player]][1] == "WAIT") {
-    stop("not your turn")
-  }
-  otherPlayers = playerNames[playerNames != player]
-  if(!(target %in% c(otherPlayers, "Discard"))) {
-    stop("cannot steal from this target")
-  }
-  if (length(cards) != 2 & length(cards) != 3 & length(cards) != 5) {
-    stop("need two of a kind or three of a kind to steal")
-  }
-  if (length(cards) == 2) {
-    if (cards[1] != cards[2]) {
-      stop("these cards do not match")
-    }
-    if (target == "Discard") {
-    	stop("can only steal from a player")
-    }
-	if (!CheckCardSet(cards, Players[[player]][-1])) {
-      stop("you do not have one or more of these cards")
-    }
-    # select a card at random to steal
-    actions <<- c(actions, paste("Discarded ", cards, " to steal from ", target, sep = ""))
-    checkNope = CheckNopes(player)
-    successNope = F
-    if (is.character(checkNope)) {
-      print(checkNope)
-      successNope = Nope(checkNope, player, cards, 1)
-    } 
-    if (successNope) {
-      print("oh well")
-      Discard(player, cards)
-    } else {
-      cd = sample(Players[[target]][-1], size = 1)
-      Discard(player, cards)
-      Players[[target]] <<- Players[[target]][-match(cd, Players[[target]])]
-      Players[[player]] <<- c(Players[[player]], cd)
-    }
-  }
-  
-  if (length(cards) == 3) {
-    if (length(unique(cards)) != 1) {
-      stop("these cards do not match")
-    }
-    if (target == "Discard") {
-    	stop("can only steal from a player")
-    }
-    if (!CheckCardSet(cards, Players[[player]][-1])) {
-      stop("you do not have one or more of these cards")
-    }
-    actions <<- c(actions, paste("Discarded ", cards, " to steal from ", target, " ", sep = ""))
-    checkNope = CheckNopes(player)
-    successNope = F
-    if (is.character(checkNope)) {
-      successNope = Nope(checkNope, player, cards, 1)
-    } 
-    if (successNope) {
-      print("oh well")
-      Discard(player, cards)
-    } else {
-      message = paste(player, ": Enter the card you want to steal from ", target, " ", sep = "")
-      cd <- readline(message)
-      if (!(cd %in% Players[[target]])) {
-        print("They do not have this card. Tough luck.")
-        actions <<- c(actions, paste("Unsuccessful steal with ", cards, sep = ""))
-        Discard(player, cards)
-      } else {
-        Discard(player, cards)
-        Players[[target]] <<- Players[[target]][-match(cd, Players[[target]])]
-        Players[[player]] <<- c(Players[[player]], cd)
-      }
-    }
-  }
-  if (length(cards) == 5) {
-  	if (length(unique(cards)) != 5) {
-  		stop("need 5 unique cards to steal from Discard")
+Steal <- function(player, target = "", cards = "") {
+	if (length(Players[[player]]) < 2) {
+    	print("you do not have any cards to steal with")
+    	return(F)
   	}
-  	if (target != "Discard") {
-  		stop("can only steal from Discard")
+  	cardset = cards
+  	if (cardset == "") {
+  		print(Players[[player]][-1])
+  		message1 = "How will you steal? Enter number of cards: "
+  		n <- readline(message1)
+  		if (n != 2 || n != 3 || n != 5) {
+  			print("cannot steal with this number of cards")
+  			return(F)
+  		}
+  		for (i in 1:n) {
+  			c <- readline("Enter card: ") 
+  			if (cardset != "") {
+  				cardset = c(cardset, c)
+  			} else {
+  				cardset = c
+  			}
+  		}
+  		if (!CheckCardSet(cards, player)) {
+  			print("you do not have one or more of these cards, or cards are not a valid set")
+  			return(Steal(player, target = "", cards = ""))
+  		}
   	}
-  	if (!CheckCardSet(cards, Players[[player]][-1])) {
-      stop("you do not have one or more of these cards")
-    }
-    actions <<- c(actions, paste("Discarded ", cards, " to steal from Discard.", sep = ""))
-    checkNope = CheckNopes(player)
-    successNope = F
-    if (is.character(checkNope)) {
-      print(checkNope)
-      successNope = Nope(checkNope, player, cards, 1)
-    } 
-    if (successNope) {
-      print("oh well")
-      Discard(player, cards)
-    } else {
-    	message = paste(player, ": Enter the card you want to steal from the Discard: ", sep = "")
-    	cd <- readline(message)
-    	### make this better
-    	if (!(cd %in% DiscardPile)) {
-    		print(paste(cd, " has not been discarded yet.", sep = ""))
-    		Steal(player, target, cards)
-    	} else {
-    		actions <<- c(actions, paste("Discarded ", cards, " to steal from ", target, sep = ""))
-    		Discard(player, cards)
-        Players[[target]] <<- Players[[target]][-match(cd, Players[[target]])]
+  	t = target
+  	if (t == "") {
+  		otherPlayers = playerNames[playerNames != player]
+  		print("You may steal from the 'discard pile' or from these players: ")
+  		print(otherPlayers)
+  		message2 = "Who/where would you like to steal from? "
+  		t <- readline(message2)
+  	}
+  	if (t == "discard pile") {
+  		if (length(cardset) != 5) {
+  			print("cannot steal from discard pile with these cards")
+  			return(Steal(player, target = "", cards = cardset))
+  		}
+  		print(DiscardPile)
+  		message3 = "Enter the card you want to steal from the discard pile: "
+  		cd <- readline(message3)
+  		if (!(cd %in% DiscardPile)) {
+  			print(paste(cd, " has not been discarded yet.", sep = ""))
+  			return(Steal(player, target = t, cards = cardset))
+  		}
+  		actions <<- c(actions, "Steal")
+  		Discard(player, cardset)
+  		isNope <- Nope(player, count = 0)
+    		if (isNope) {
+    			return(F)
+    		}
+        DiscardPile <<- DiscardPile[-match(cd, DiscardPile)]
         Players[[player]] <<- c(Players[[player]], cd)
+        return(F)
+    }
+  	if (!(t %in% otherPlayers) || Players[[t]][1] == "DEAD" || length(Players[[t]]) < 2) {
+  		print("Cannot get a favor from this player")
+  		return(Steal(player, cards = cardset))
+  	}
+  	actions <<- c(actions, "Steal")
+  	Discard(player, cardset)
+  	isNope <- Nope(player, count = 0)
+    if (isNope) {
+    	return(F)
+    }
+    if (length(cardset) == 2) {
+    	cd = sample(Players[[t]][-1], size = 1)
+    } 
+    if (length(cardset) == 3) {
+    	message4 = paste("Enter the card you want to steal from ", target, sep = "")
+    	cd <- readline(message4)
+    	if (!(cd %in% Players[[t]])) {
+    		print("They do not have this card.  Tough luck.")
+    		return(F)
     	}
     }
-  }
+    Players[[target]] <<- Players[[target]][-match(cd, Players[[target]])]
+    Players[[player]] <<- c(Players[[player]], cd)
+    current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
+  	return(F)
 }
 
-#need way to check if "nope" is other than "yes" or "no"
-#player is the player of the cards that may or may not be Nope'd
-CheckNopes <- function(player) {
-  otherPlayers = playerNames[playerNames != player]
-  for (i in otherPlayers) {
-    if ("NO" %in% Players[[i]]){
-      message = paste(i, " :Do you want to play your Nope? Type 'Yes' if you do. Otherwise, type anything else. ")
-      nope <- readline(message)
-      if ("Yes" == nope) {
-        return(i)
-        #Nope(i, player, targetCard)
-      } else {
-        next
-      }
-    }
-  }
-  return(F)
+CheckCardSet <- function(set, player) {
+	hand = Players[[player]][-1]
+	if ((length(set) == 2 || length(set) == 3) & length(unique(set)) == 1) {
+		return(CheckHand(set, hand))
+	}
+	if (length(unique(cards)) == 5) {
+		return(CheckHand(set, hand))
+	}
+	return(F)
 }
 
-#player is the player who played the Nope
-#target is whom the Nope affects
-#targetCard is the action card(s) being Nope'd
-Nope <- function(player, target, targetCard, count) {
-  Discard(player, "NO")
-  checkNope = CheckNopes(player)
-  if (is.character(checkNope)) {
-    #Need to maintain the original player of the card
-    Nope(checkNope, target, targetCard, count+1)
-  } else {
-    if (is.integer(count/2)) {
-      print(count)
-      actions <<- c(actions, paste(target, " Noped by ", player, sep = ""))
-      #Discard(target, targetCard)
-      return(T)
-    } else {
-      return(F)
-    }
+CheckHand <- function(set, hand) {
+	if (length(set) == 1) {
+    	if (set[1] %in% hand) {
+      		return(T)
+    	} else {
+      		return(F)
+    	}
+  	}
+  	if (length(set) > 1) {
+	  for (i in 1:length(hand)) {
+		  if (set[1] == hand[i])	{
+			  #result = CheckCardSet(set[-1], hand[-i])
+			  return(CheckCardSet(set[-1], hand[-i]))
+		  } 
+	  }
+    #return(result)
   }
 }
 
 
-#Test Turn taking for more than 2 players
-#Test Steal, minor things to fix in 5 card steal
-# Rethink Turns Data.frame???
-#Test Calc Explode Probability Function and create explode_prob vector to store results
-#
+
+
+    
+    
+
+
