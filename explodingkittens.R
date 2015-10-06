@@ -16,6 +16,7 @@ DiscardPile = ""
 Players = ""
 playerNames = ""
 alive = ""
+lastcardplayed = ""
 actions = ""
 explode_probability = ""
 
@@ -69,6 +70,7 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
   Players <<- playerList
   playerNames <<- names(Players)
   alive <<- playerNames
+  lastcardplayed <<- ""
   deadcount <<- 0
   Players[[1]][1] <<- "TURN"
   actions <<- "Start Game"
@@ -85,38 +87,69 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
     turnover = F
     while (!turnover) {
     	if (!(Players[[p]][1] %in% c("TURN", "DOUBLETURN"))) {
-  			break
+  			next
   		}
-  		print("Your cards:")
-  		print(Players[[p]][-1])
-  		move = readline(paste(p, ": What will you do?", sep = ""))
-  		if (move == "quit") {
-  			stop("quitting game prematurely")
-  		}
+      move = DoMoveHelper(p)
+  		#move = DoMoveHelperStrat(p)
   		turnover = DoMove(move, p, p_next) 
   	}
-  	if (DiscardPile[length(DiscardPile)] == "DF") {	# if player recently defused
+  	if (lastcardplayed == "DF") {	# if player recently defused
   		PlaceKitten(p)
   	}
   	if (Players[[p]][1] == "DOUBLETURN") {
-  		if (DiscardPile[length(DiscardPile)] == "AT") {
+  		if (lastcardplayed == "AT") {
   			order = c(order[1:i], order[i+2:length(order)])
-  			Players[[p]][1] = "WAIT"
+  			Players[[p]][1] <<- "WAIT"
   		} else {
-  			order = c(order[1:i], p, order[i:length(order)])
-  			Players[[p]][1] = "TURN"	
+  			order = c(order[1:i], p, order[i+1:length(order)])
+  			Players[[p]][1] <<- "TURN"	
   		}
   	} else {
-  		Players[[p]][1] = "WAIT"
+  		Players[[p]][1] <<- "WAIT"
   		if (Players[[p_next]][1] == "WAIT") {
-  			Players[[p_next]][1] = "TURN"
+  			Players[[p_next]][1] <<- "TURN"
   		}
   	}
-  	turn = cbind(PlayerTurn = player, Actions = actions, ExplodeProbability = explode_probability)
+  	turn = cbind(PlayerTurn = p, Actions = actions, ExplodeProbability = explode_probability)
     Turns <<- rbind(Turns, turn)
     Turns <<- rbind(Turns, turn)
 	}
 	print("Game Over.")
+}
+
+PlaceKitten <- function() {
+  n = length(Deck)
+  print(paste("Deck has ", n, " cards"))
+  num <- readline("Where would you like to place the Exploding Kitten? Anything else places it randomly.")
+  num = as.numeric(num)
+  if(is.na(num)) {
+    place = sample(1:length(Deck), size = 1)
+    former = Deck[1:place]
+    latter = Deck[(place+1):n]
+    Deck <<- c(former, "EK", latter)
+    } else {
+      if (num > n) {
+        Deck <<- c(Deck, "EK")
+        } else {
+          if (num <= 1 ) {
+            Deck <<- c("EK", Deck)
+            } else {
+              former = Deck[1:(num-1)]
+              latter = Deck[(num+1):n]
+              Deck <<- c(former, "EK", latter)
+            }
+        }
+    }
+}
+
+DoMoveHelper <- function(p) {
+  print("Your cards:")
+  print(Players[[p]][-1])
+  move = readline(paste(p, ": What will you do?", sep = ""))
+  if (move == "quit") {
+    stop("quitting game prematurely")
+  }
+  return(move)
 }
 
 DoMove <- function(move, player, nextplayer) {
@@ -161,7 +194,8 @@ Discard <- function(player, cards) {
 }
 
 Draw <- function(player, nextplayer) {
-	nextcard = Deck[1]
+    lastcardplayed <<- ""
+	  nextcard = Deck[1]
   	Deck <<- Deck[-1]
   	if (nextcard == "EK" & !("DF" %in% Players[[player]])) {
   		print("You exploded. That's ok.  All kittens go to heaven.")
@@ -175,9 +209,10 @@ Draw <- function(player, nextplayer) {
   	}
   	if (nextcard == "EK" & ("DF" %in% Players[[player]])) {
   		Discard(player, "DF")
+  		lastcardplayed <<- "DF"
   		print("you ALMOST exploded. Hang in there. You're playing with kittens and you're still alive")
   		actions <<- c(actions, "Draw", "Defuse", "End Turn")
-  		current_prob = CalculateExplodeProbability(p)
+  		current_prob = CalculateExplodeProbability(player)
   		explode_probability <<- c(explode_probability, current_prob)
   	}
   	if (nextcard != "EK") {
@@ -202,15 +237,16 @@ CheckNopes <- function(player) {
 	otherPlayers = playerNames[playerNames != player]
 	for (i in otherPlayers) {
     if ("NO" %in% Players[[i]]) {
-      message = paste(i, " :Do you want to play your Nope? Type 'Yes' if you do. Otherwise, type anything else. ")
+      message = paste(i, ": Do you want to play your Nope? Type 'Yes' if you do. Otherwise, type anything else. ")
       reply <- readline(message)
-      if ("yes" == reply) {
+      if ("Yes" == reply) {
       	return(i)
       } else {
-      	return("None")
+      	next
       }
     }
   }
+	return("None")
 }
 
 PlayNopes <- function(noper, player, count) {
@@ -238,13 +274,14 @@ Attack <- function(player, nextplayer) {
 		print("you do not have an Attack card")
 		return(F)
     }
+    lastcardplayed <<- "AT"
     actions <<- c(actions, "Attack")
     Discard(player, "AT")
     isNope <- Nope(player, count = 0)
     if (isNope) {
     	return(F)
     } else {
-    	Players[[nextplayers]][1] = "DOUBLETURN"
+    	Players[[nextplayer]][1] <<- "DOUBLETURN"
     }
   	current_prob = CalculateExplodeProbability(player)
   	explode_probability <<- c(explode_probability, current_prob)
@@ -256,6 +293,7 @@ Skip <- function(player) {
     	print("you do not have an Skip card")
     	return(F)
   	}
+	  lastcardplayed <<- "SK"
   	actions <<- c(actions, "Skip")
   	Discard(player, "SK")
   	isNope <- Nope(player, count = 0)
@@ -272,13 +310,14 @@ Favor <- function(player, target = "") {
     	print("you do not have a Favor card")
     	return(F)
   	}
+	  lastcardplayed <<- "FA"
   	if (target == "") {
   		otherPlayers = playerNames[playerNames != player]
   		print("Players:")
   		print(otherPlayers)
   		message1 = "Who would you like a favor from?"
   		t <- readline(message1)
-  		if (!(target %in% otherPlayers) || Players[[target]][1] == "DEAD" || length(Players[[target]]) < 2) {
+  		if (!(t %in% otherPlayers) || Players[[t]][1] == "DEAD" || length(Players[[t]]) < 2) {
   			print("Cannot get a favor from this player")
   			return(F)
   		}
@@ -313,6 +352,7 @@ Shuffle <- function(player) {
     	print("you do not have a Shuffle card")
     	return(F)
   	}
+	  lastcardplayed <<- "SH"
   	actions <<- c(actions, "Shuffle")
   	Discard(player, "SH")
   	isNope <- Nope(player, count = 0)
@@ -345,6 +385,7 @@ SeeTheFuture <- function(player) {
 }
 
 Steal <- function(player, target = "", cards = "") {
+  print(player)
 	if (length(Players[[player]]) < 2) {
     	print("you do not have any cards to steal with")
     	return(F)
@@ -354,19 +395,19 @@ Steal <- function(player, target = "", cards = "") {
   		print(Players[[player]][-1])
   		message1 = "How will you steal? Enter number of cards: "
   		n <- readline(message1)
-  		if (n != 2 || n != 3 || n != 5) {
+  		if (!(n %in% c(2, 3, 5))) {
   			print("cannot steal with this number of cards")
   			return(F)
   		}
   		for (i in 1:n) {
-  			c <- readline("Enter card: ") 
+  			inputcard <- readline("Enter card: ") 
   			if (cardset != "") {
-  				cardset = c(cardset, c)
+  				cardset = c(cardset, inputcard)
   			} else {
-  				cardset = c
+  				cardset = inputcard
   			}
   		}
-  		if (!CheckCardSet(cards, player)) {
+  		if (!CheckCardSet(cardset, player)) {
   			print("you do not have one or more of these cards, or cards are not a valid set")
   			return(Steal(player, target = "", cards = ""))
   		}
@@ -392,6 +433,7 @@ Steal <- function(player, target = "", cards = "") {
   			return(Steal(player, target = t, cards = cardset))
   		}
   		actions <<- c(actions, "Steal")
+  		lastcardplayed <<- cardset
   		Discard(player, cardset)
   		isNope <- Nope(player, count = 0)
     		if (isNope) {
@@ -406,6 +448,7 @@ Steal <- function(player, target = "", cards = "") {
   		return(Steal(player, cards = cardset))
   	}
   	actions <<- c(actions, "Steal")
+  	lastcardplayed <<- cardset
   	Discard(player, cardset)
   	isNope <- Nope(player, count = 0)
     if (isNope) {
@@ -434,7 +477,7 @@ CheckCardSet <- function(set, player) {
 	if ((length(set) == 2 || length(set) == 3) & length(unique(set)) == 1) {
 		return(CheckHand(set, hand))
 	}
-	if (length(unique(cards)) == 5) {
+	if (length(unique(set)) == 5) {
 		return(CheckHand(set, hand))
 	}
 	return(F)
@@ -452,7 +495,7 @@ CheckHand <- function(set, hand) {
 	  for (i in 1:length(hand)) {
 		  if (set[1] == hand[i])	{
 			  #result = CheckCardSet(set[-1], hand[-i])
-			  return(CheckCardSet(set[-1], hand[-i]))
+			  return(CheckHand(set[-1], hand[-i]))
 		  } 
 	  }
     #return(result)
