@@ -76,7 +76,8 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
   #Players[[1]][1] <<- "TURN"
   #Players[[1]][1] <<- "ALIVE"
   actions <<- "Start Game"
-  Turns <<- data.frame(PlayerTurn = playerNames[1], Actions = actions, ExplodeProbability = 0)
+  explode_probability <<- ""
+  Turns <<- data.frame(PlayerTurn = playerNames[1], Actions = actions, ExplodeProbability = explode_probability)
   
   order <<- rep(playerNames, 100)
   for (i in 1:length(order)) {
@@ -95,6 +96,8 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
         break
       }
     }
+    actions <<- "StartTurn"
+    explode_probability <<- CalculateExplodeProbability(p)
     turnover = F
     while (!turnover) {
       move = DoMoveHelper(p)
@@ -113,8 +116,12 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
   		  #}
   		}
     }
+    #current_prob = CalculateExplodeProbability(player)
   	turn = cbind(PlayerTurn = p, Actions = actions, ExplodeProbability = explode_probability)
+    print(turn)
     Turns <<- rbind(Turns, turn)
+    
+    
   }
 	print("Game Over.")
 }
@@ -207,7 +214,7 @@ Draw <- function(player, nextplayer) {
     	deadcount <<- deadcount + 1
     	alive <<- alive[alive != player]
   		actions <<- c(actions, "Draw", "Exploded", "End Turn")
-  		explode_probability <<- c(explode_probability, NA)
+  		explode_probability <<- c(explode_probability, NA, NA, NA)
   	}
   	if (nextcard == "EK" & ("DF" %in% Players[[player]])) {
   		Discard(player, "DF")
@@ -215,13 +222,13 @@ Draw <- function(player, nextplayer) {
   		print("you ALMOST exploded. Hang in there. You're playing with kittens and you're still alive")
   		actions <<- c(actions, "Draw", "Defuse", "End Turn")
   		current_prob = CalculateExplodeProbability(player)
-  		explode_probability <<- c(explode_probability, current_prob)
+  		explode_probability <<- c(explode_probability, current_prob, current_prob, current_prob)
   	}
   	if (nextcard != "EK") {
   		Players[[player]] <<- c(Players[[player]], nextcard)
   		actions <<- c(actions, "Draw", "End Turn")
   		current_prob = CalculateExplodeProbability(player)
-  		explode_probability <<- c(explode_probability, current_prob)
+  		explode_probability <<- c(explode_probability, current_prob, current_prob)
   	}
   	return(T)
 }
@@ -447,7 +454,7 @@ Steal <- function(player, target = "", cards = "") {
         return(F)
     }
   	if (!(t %in% otherPlayers) || Players[[t]][1] == "DEAD" || length(Players[[t]]) < 2) {
-  		print("Cannot get a favor from this player")
+  		print("Cannot steal from this player")
   		return(Steal(player, cards = cardset))
   	}
   	actions <<- c(actions, "Steal")
@@ -467,6 +474,10 @@ Steal <- function(player, target = "", cards = "") {
     		print("They do not have this card.  Tough luck.")
     		return(F)
     	}
+    }
+    if (length(cardset) == 5) {
+      print("Did you mean to steal from the 'discard pile'?")
+      return(Steal(player, cards = cardset, target = "discard pile"))
     }
     Players[[target]] <<- Players[[target]][-match(cd, Players[[target]])]
     Players[[player]] <<- c(Players[[player]], cd)
