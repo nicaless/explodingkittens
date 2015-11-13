@@ -1,3 +1,4 @@
+options(warn = -1)
 deck = c("EK", "EK", "EK", "EK", 
          "DF", "DF", "DF", "DF", "DF", "DF",
          "NO", "NO", "NO", "NO", "NO",
@@ -21,6 +22,8 @@ actions = ""
 explode_probability = ""
 order = ""
 
+dbturn = ""
+
 # Calculates the probability of a player exploding at any time 
 CalculateExplodeProbability <- function(player) {
   if ("DF" %in% Players[[player]]) {
@@ -34,16 +37,16 @@ CalculateExplodeProbability <- function(player) {
 
 
 #Creates Players, Deals cards, shuffles deck.
-StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
-  if (numplayers > 4) {
+StartGame <- function(numplayers = 2, playernames = c("player1", "player2"), computer = F) {
+  if (numplayers > 5) {
     stop("currently not supported for 5+ player games. Working on it!")
   }
+  strat = computer
   setupdeck = deck[deck != "EK" & deck != "DF"]
   setupdeck = sample(setupdeck)
   playerList = list()
   if(numplayers > length(playernames)) {
-    n = numplayers - length(playernames)
-    for(i in (numplayers+1):n) {
+    for(i in (length(playernames)+1):numplayers) {
       playernames[i] = paste("player", i, sep = "")
     }
   }
@@ -51,7 +54,7 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
     hand = setupdeck[1:4]
     setupdeck = setupdeck[5:length(setupdeck)]
     hand[5] = "DF"
-    playerList[[i]] = c("WAIT", hand)
+    playerList[[i]] = c("ALIVE", hand)
   }
   names(playerList) = playernames
   if (numplayers == 2) {
@@ -73,20 +76,19 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
   alive <<- playerNames
   lastcardplayed <<- ""
   deadcount <<- 0
-  #Players[[1]][1] <<- "TURN"
-  #Players[[1]][1] <<- "ALIVE"
   actions <<- "Start Game"
   explode_probability <<- ""
   Turns <<- data.frame(PlayerTurn = playerNames[1], Actions = actions, ExplodeProbability = explode_probability)
   
   order <<- rep(playerNames, 100)
+  
+  dbturn <<- ""
   for (i in 1:length(order)) {
     if (length(alive) == 1) {	# check if only one person is alive
       print(paste(alive, " wins! Everyone else exploded.", sep = ""))
       break
     } 
   	p = order[i]
-  	#if (!(Players[[p]][1] %in% c("TURN", "DOUBLETURN"))) {
     if (!(p %in% alive)) {
   	  next
   	}
@@ -100,25 +102,22 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
     explode_probability <<- CalculateExplodeProbability(p)
     turnover = F
     while (!turnover) {
-      move = DoMoveHelper(p)
-  		#move = DoMoveHelperStrat(p)
-  		turnover = DoMove(move, p, p_next) 
+      move = DoMoveHelper(p, strat)
+  		turnover = DoMove(move, p, p_next, strat) 
   		if (lastcardplayed == "DF") {	# if player recently defused
-  		  PlaceKitten()
+  		  PlaceKitten(strat)
   		}
-  		if (Players[[p]][1] == "DOUBLETURN") {
-  		  #if (lastcardplayed == "AT") {
-  		  #  Players[[p]][1] <<- "ALIVE"
-  		  #  Players[[p_next]][1] <<- "TURN"
-  		  #} else {
-  		    Players[[p]][1] <<- "ALIVE"
+  		if (dbturn == "ON" & turnover == T) {
+  		  if (lastcardplayed == "AT") {
+  		    turnover = T
+  		  } else {
+  		    dbturn <<- "OFF"
           turnover = F
-  		  #}
+  		  }
   		}
+  		Players[[p]][-1] <<- sample(Players[[p]][-1])
     }
-    #current_prob = CalculateExplodeProbability(player)
   	turn = cbind(PlayerTurn = p, Actions = actions, ExplodeProbability = explode_probability)
-    print(turn)
     Turns <<- rbind(Turns, turn)
     
     
@@ -126,11 +125,15 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2")) {
 	print("Game Over.")
 }
 
-PlaceKitten <- function() {
+PlaceKitten <- function(strat) {
   n = length(Deck)
-  print(paste("Deck has ", n, " cards"))
-  num <- readline("Where would you like to place the Exploding Kitten? Anything else places it randomly.")
-  num = as.numeric(num)
+  if (strat == T) {
+    num = sample(1:length(Deck), size = 1)
+  } else {
+    print(paste("Deck has ", n, " cards"))
+    num <- readline("Where would you like to place the Exploding Kitten? Anything else places it randomly. ")
+    num = as.numeric(num)
+  }
   if(is.na(num)) {
     place = sample(1:length(Deck), size = 1)
     former = Deck[1:place]
@@ -151,17 +154,57 @@ PlaceKitten <- function() {
     }
 }
 
-DoMoveHelper <- function(p) {
+DoMoveHelper <- function(p, strategy) {
   print("Your cards:")
   print(Players[[p]][-1])
-  move = readline(paste(p, ": What will you do?", sep = ""))
-  if (move == "quit") {
-    stop("quitting game prematurely")
+  if (strategy == F) {
+    move = readline(paste(p, ": What will you do? ", sep = ""))
+    if (move == "quit") {
+      stop("quitting game prematurely")
+    }
+  } else {
+    computercards = Players[[p]][-1]
+    move = DoComputerStrat(computercards)
   }
   return(move)
 }
 
-DoMove <- function(move, player, nextplayer) {
+DoComputerStrat <- function(computercards) {
+  card = computercards[1]
+  move = ""
+  if (is.na(card)) {
+    move = "draw"
+    return(move)
+  }
+  if (card == "AT") {
+    move = "attack"
+  }
+  if (card == "SK") {
+    move = "skip"
+  }
+  if (card == "FA") {
+    move = "favor"
+  }
+  if (card == "SH") {
+    move = "shuffle"
+  }
+  if (card == "SF") {
+    move == "see the future"
+  }
+  if (card == "DF") {
+    move = "draw"
+  }
+  if (card %in% computercards[-1]){
+    move = "steal"
+  } 
+  if (move == "") {
+    move = "draw"
+  }
+  print(move)
+  return(move)
+}
+
+DoMove <- function(move, player, nextplayer, strat) {
 	if (!(move %in% c("draw", "attack", "skip", 
 					   "favor", "shuffle", 
 					   "see the future", "steal"))) {
@@ -172,22 +215,35 @@ DoMove <- function(move, player, nextplayer) {
 		return(Draw(player))
 	}
 	if (move == "attack") {
-		return(Attack(player, nextplayer))
+		return(Attack(player, nextplayer, strat))
 	}
 	if (move == "skip") {
-		return(Skip(player))
+		return(Skip(player, strat))
 	}
 	if (move == "favor") {
-		return(Favor(player))
+	  if (strat == T) {
+	    return(Favor(player,
+	                 target = alive[-match(player, alive)][1],
+	                 strat))
+	  } else {
+		  return(Favor(player, target = "", strat))
+	  }
 	}
 	if (move == "shuffle") {
-		return(Shuffle(player))
+		return(Shuffle(player, strat))
 	}
 	if (move == "see the future") {
-		return(SeeTheFuture(player))
+		return(SeeTheFuture(player, strat))
 	}
 	if (move == "steal") {
-		return(Steal(player))
+	  if (strat == T) {
+	    return(Steal(player, 
+	                 target = alive[-match(player, alive)][1],
+	                 cards = c(Players[[player]][2], Players[[player]][2]),
+	                 strat))
+	  } else {
+		  return(Steal(player, target = "", cards = "", strat))
+	  }
 	}
 }
 
@@ -233,21 +289,25 @@ Draw <- function(player, nextplayer) {
   	return(T)
 }
 
-Nope <- function(player, count = 0) {
-	p = CheckNopes(player)
+Nope <- function(player, count = 0, strat) {
+	p = CheckNopes(player, strat)
 	if (p == "None") {
 		return(F)
 	} else {
-		return(PlayNopes(p, player, 1))
+		return(PlayNopes(p, player, 1, strat))
 	}
 }
 
-CheckNopes <- function(player) {
+CheckNopes <- function(player, strat) {
 	otherPlayers = playerNames[playerNames != player]
 	for (i in otherPlayers) {
     if ("NO" %in% Players[[i]]) {
-      message = paste(i, ": Do you want to play your Nope? Type 'Yes' if you do. Otherwise, type anything else. ")
-      reply <- readline(message)
+      if (strat == T) {
+        reply = "Yes"
+      } else {
+        message = paste(i, ": Do you want to play your Nope? Type 'Yes' if you do. Otherwise, type anything else. ")
+        reply <- readline(message)
+      }
       if ("Yes" == reply) {
       	return(i)
       } else {
@@ -258,12 +318,12 @@ CheckNopes <- function(player) {
 	return("None")
 }
 
-PlayNopes <- function(noper, player, count) {
+PlayNopes <- function(noper, player, count, strat) {
 	Discard(noper, "NO")
 	actions <<- c(actions, paste(noper, " plays Nope", sep = ""))
 	current_prob = CalculateExplodeProbability(player)
   explode_probability <<- c(explode_probability, current_prob)
-	p = CheckNopes(noper)
+	p = CheckNopes(noper, strat)
 	if (p == "None") {
 		if ((count %% 2) == 0) {
 			return(F)
@@ -273,12 +333,12 @@ PlayNopes <- function(noper, player, count) {
 		}
 	} else {
 	  count = count + 1
-		return(PlayNopes(p, player, count))
+		return(PlayNopes(p, player, count, strat))
 	}
 }
 
 
-Attack <- function(player, nextplayer) {
+Attack <- function(player, nextplayer, strat) {
 	if (!("AT" %in% Players[[player]])) {
 		print("you do not have an Attack card")
 		return(F)
@@ -286,19 +346,18 @@ Attack <- function(player, nextplayer) {
     lastcardplayed <<- "AT"
     actions <<- c(actions, "Attack")
     Discard(player, "AT")
-    isNope <- Nope(player, count = 0)
+    isNope <- Nope(player, count = 0, strat)
     if (isNope) {
     	return(F)
     } else {
-    	Players[[nextplayer]][1] <<- "DOUBLETURN"
-    	Players[[player]][1] <<- "ALIVE"
+    	dbturn <<- "ON"
     }
   	current_prob = CalculateExplodeProbability(player)
   	explode_probability <<- c(explode_probability, current_prob)
     return(T)
 }
 
-Skip <- function(player) {
+Skip <- function(player, strat) {
 	if (!("SK" %in% Players[[player]])) {
     	print("you do not have an Skip card")
     	return(F)
@@ -306,7 +365,7 @@ Skip <- function(player) {
 	  lastcardplayed <<- "SK"
   	actions <<- c(actions, "Skip")
   	Discard(player, "SK")
-  	isNope <- Nope(player, count = 0)
+  	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
     	return(F)
     }
@@ -315,7 +374,22 @@ Skip <- function(player) {
     return(T)
 }
     
-Favor <- function(player, target = "") {
+Favor <- function(player, target = "", strat) {
+  if (strat == T) {
+    actions <<- c(actions, "Favor")
+    Discard(player, "FA")
+    isNope <- Nope(player, count = 0, strat)
+    if (isNope) {
+      return(F)
+    } else {
+      card = Players[[target]][2]
+      Players[[target]] <<- Players[[target]][-match(card, Players[[target]])]
+      Players[[player]] <<- c(Players[[player]], card)
+      current_prob = CalculateExplodeProbability(player)
+      explode_probability <<- c(explode_probability, current_prob)
+      return(F)
+    }
+  }
 	if (!("FA" %in% Players[[player]])) {
     	print("you do not have a Favor card")
     	return(F)
@@ -334,30 +408,33 @@ Favor <- function(player, target = "") {
   	} else {
   		t = target
   	}
-  	isNope <- Nope(player, count = 0)
+	  Discard(player, "FA")
+  	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
     	return(F)
     } else {
-    	print(paste(t, "'s cards:"))
-  		print(Players[[t]][-1])
-    	message2 = paste(t, ": Enter a card to give to ", player, sep = "")
-    	card <- readline(message2)
-    	if (!(card %in% Players[[t]])) {
-    		print("You do not have this card.")
-    		return(Favor(player, target = t))
-    	} else {
-    	  actions <<- c(actions, "Favor")
-    	  Discard(player, "FA")
-    		Players[[t]] <<- Players[[t]][-match(card, Players[[t]])]
-    		Players[[player]] <<- c(Players[[player]], card)
-    	}  	
+      good = F
+      while(!good) {
+    	  print(paste(t, "'s cards:"))
+  		  print(Players[[t]][-1])
+    	  message2 = paste(t, ": Enter a card to give to ", player, sep = "")
+    	  card <- readline(message2)
+    	  if (!(card %in% Players[[t]])) {
+    		  print("You do not have this card.")
+    	  } else {
+    	    good = T
+    	  }
+      }
+      actions <<- c(actions, "Favor")
+      Players[[t]] <<- Players[[t]][-match(card, Players[[t]])]
+      Players[[player]] <<- c(Players[[player]], card)
     }
     current_prob = CalculateExplodeProbability(player)
   	explode_probability <<- c(explode_probability, current_prob)
   	return(F)
 }
 
-Shuffle <- function(player) {
+Shuffle <- function(player, strat) {
 	if (!("SH" %in% Players[[player]])) {
     	print("you do not have a Shuffle card")
     	return(F)
@@ -365,7 +442,7 @@ Shuffle <- function(player) {
 	  lastcardplayed <<- "SH"
   	actions <<- c(actions, "Shuffle")
   	Discard(player, "SH")
-  	isNope <- Nope(player, count = 0)
+  	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
     	return(F)
     } 
@@ -376,14 +453,15 @@ Shuffle <- function(player) {
     return(F)
 }
 
-SeeTheFuture <- function(player) {
+SeeTheFuture <- function(player,strat) {
 	if (!("SF" %in% Players[[player]])) {
     	print("you do not have a See the Future card")
     	return(F)
-  	}
+	}
+    lastcardplayed <<- "SF"
   	actions <<- c(actions, "See the Future")
   	Discard(player, "SF")
-  	isNope <- Nope(player, count = 0)
+  	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
     	return(F)
     } 
@@ -394,8 +472,8 @@ SeeTheFuture <- function(player) {
     return(F)
 }
 
-Steal <- function(player, target = "", cards = "") {
-  print(player)
+Steal <- function(player, target = "", cards = "", strat) {
+  otherPlayers = playerNames[playerNames != player]
 	if (length(Players[[player]]) < 2) {
     	print("you do not have any cards to steal with")
     	return(F)
@@ -419,12 +497,11 @@ Steal <- function(player, target = "", cards = "") {
   		}
   		if (!CheckCardSet(cardset, player)) {
   			print("you do not have one or more of these cards, or cards are not a valid set")
-  			return(Steal(player, target = "", cards = ""))
+  			return(F)
   		}
   	}
   	t = target
   	if (t == "") {
-  		otherPlayers = playerNames[playerNames != player]
   		print("You may steal from the 'discard pile' or from these players: ")
   		print(otherPlayers)
   		message2 = "Who/where would you like to steal from? "
@@ -433,19 +510,19 @@ Steal <- function(player, target = "", cards = "") {
   	if (t == "discard pile") {
   		if (length(cardset) != 5) {
   			print("you need 5 unique cards to steal from the 'discard pile'")
-  			return(Steal(player, target = "", cards = cardset))
+  			return(Steal(player, target = "", cards = cardset, strat))
   		}
   		print(DiscardPile)
   		message3 = "Enter the card you want to steal from the discard pile: "
   		cd <- readline(message3)
   		if (!(cd %in% DiscardPile)) {
   			print(paste(cd, " has not been discarded yet.", sep = ""))
-  			return(Steal(player, target = t, cards = cardset))
+  			return(Steal(player, target = t, cards = cardset, strat))
   		}
   		actions <<- c(actions, "Steal")
-  		lastcardplayed <<- cardset
+  		lastcardplayed <<- cardset[1]
   		Discard(player, cardset)
-  		isNope <- Nope(player, count = 0)
+  		isNope <- Nope(player, count = 0, strat)
     		if (isNope) {
     			return(F)
     		}
@@ -455,12 +532,12 @@ Steal <- function(player, target = "", cards = "") {
     }
   	if (!(t %in% otherPlayers) || Players[[t]][1] == "DEAD" || length(Players[[t]]) < 2) {
   		print("Cannot steal from this player")
-  		return(Steal(player, cards = cardset))
+  		return(Steal(player, target = "", cards = cardset, strat))
   	}
   	actions <<- c(actions, "Steal")
-  	lastcardplayed <<- cardset
+  	lastcardplayed <<- cardset[1]
   	Discard(player, cardset)
-  	isNope <- Nope(player, count = 0)
+  	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
     	return(F)
     }
@@ -508,11 +585,9 @@ CheckHand <- function(set, hand) {
   	if (length(set) > 1) {
 	  for (i in 1:length(hand)) {
 		  if (set[1] == hand[i])	{
-			  #result = CheckCardSet(set[-1], hand[-i])
 			  return(CheckHand(set[-1], hand[-i]))
 		  } 
 	  }
-    #return(result)
   }
 }
 
