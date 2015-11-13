@@ -18,6 +18,7 @@ Players = ""
 playerNames = ""
 alive = ""
 lastcardplayed = ""
+deadcount = 0
 actions = ""
 explode_probability = ""
 order = ""
@@ -70,7 +71,6 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2"), com
   setupdeck = sample(setupdeck)
   Deck <<- setupdeck
   DiscardPile <<- ""
-  DeadKittenPile <<- ""
   Players <<- playerList
   playerNames <<- names(Players)
   alive <<- playerNames
@@ -102,6 +102,7 @@ StartGame <- function(numplayers = 2, playernames = c("player1", "player2"), com
     explode_probability <<- CalculateExplodeProbability(p)
     turnover = F
     while (!turnover) {
+      print(p)
       move = DoMoveHelper(p, strat)
   		turnover = DoMove(move, p, p_next, strat) 
   		if (lastcardplayed == "DF") {	# if player recently defused
@@ -174,34 +175,50 @@ DoComputerStrat <- function(computercards) {
   move = ""
   if (is.na(card)) {
     move = "draw"
+    print(move)
     return(move)
   }
   if (card == "AT") {
     move = "attack"
+    print(move)
+    return(move)
+  
   }
   if (card == "SK") {
     move = "skip"
+    print(move)
+    return(move)
   }
   if (card == "FA") {
     move = "favor"
+    print(move)
+    return(move)
   }
   if (card == "SH") {
     move = "shuffle"
+    print(move)
+    return(move)
   }
   if (card == "SF") {
-    move == "see the future"
+    move = "see the future"
+    print(move)
+    return(move)
   }
   if (card == "DF") {
     move = "draw"
+    print(move)
+    return(move)
   }
   if (card %in% computercards[-1]){
     move = "steal"
+    print(move)
+    return(move)
   } 
   if (move == "") {
     move = "draw"
+    print(move)
+    return(move)
   }
-  print(move)
-  return(move)
 }
 
 DoMove <- function(move, player, nextplayer, strat) {
@@ -345,6 +362,8 @@ Attack <- function(player, nextplayer, strat) {
     }
     lastcardplayed <<- "AT"
     actions <<- c(actions, "Attack")
+    current_prob = CalculateExplodeProbability(player)
+    explode_probability <<- c(explode_probability, current_prob)
     Discard(player, "AT")
     isNope <- Nope(player, count = 0, strat)
     if (isNope) {
@@ -352,8 +371,6 @@ Attack <- function(player, nextplayer, strat) {
     } else {
     	dbturn <<- "ON"
     }
-  	current_prob = CalculateExplodeProbability(player)
-  	explode_probability <<- c(explode_probability, current_prob)
     return(T)
 }
 
@@ -364,19 +381,21 @@ Skip <- function(player, strat) {
   	}
 	  lastcardplayed <<- "SK"
   	actions <<- c(actions, "Skip")
+  	current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
   	Discard(player, "SK")
   	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
     	return(F)
     }
-  	current_prob = CalculateExplodeProbability(player)
-  	explode_probability <<- c(explode_probability, current_prob)
     return(T)
 }
     
 Favor <- function(player, target = "", strat) {
   if (strat == T) {
     actions <<- c(actions, "Favor")
+    current_prob = CalculateExplodeProbability(player)
+    explode_probability <<- c(explode_probability, current_prob)
     Discard(player, "FA")
     isNope <- Nope(player, count = 0, strat)
     if (isNope) {
@@ -385,8 +404,6 @@ Favor <- function(player, target = "", strat) {
       card = Players[[target]][2]
       Players[[target]] <<- Players[[target]][-match(card, Players[[target]])]
       Players[[player]] <<- c(Players[[player]], card)
-      current_prob = CalculateExplodeProbability(player)
-      explode_probability <<- c(explode_probability, current_prob)
       return(F)
     }
   }
@@ -408,6 +425,9 @@ Favor <- function(player, target = "", strat) {
   	} else {
   		t = target
   	}
+	  actions <<- c(actions, "Favor")
+	  current_prob = CalculateExplodeProbability(player)
+	  explode_probability <<- c(explode_probability, current_prob)
 	  Discard(player, "FA")
   	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
@@ -425,12 +445,9 @@ Favor <- function(player, target = "", strat) {
     	    good = T
     	  }
       }
-      actions <<- c(actions, "Favor")
       Players[[t]] <<- Players[[t]][-match(card, Players[[t]])]
       Players[[player]] <<- c(Players[[player]], card)
     }
-    current_prob = CalculateExplodeProbability(player)
-  	explode_probability <<- c(explode_probability, current_prob)
   	return(F)
 }
 
@@ -441,6 +458,8 @@ Shuffle <- function(player, strat) {
   	}
 	  lastcardplayed <<- "SH"
   	actions <<- c(actions, "Shuffle")
+  	current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
   	Discard(player, "SH")
   	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
@@ -448,8 +467,6 @@ Shuffle <- function(player, strat) {
     } 
     Deck <<- sample(Deck)
     print("Deck is shuffled")
-    current_prob = CalculateExplodeProbability(player)
-  	explode_probability <<- c(explode_probability, current_prob)
     return(F)
 }
 
@@ -460,6 +477,8 @@ SeeTheFuture <- function(player,strat) {
 	}
     lastcardplayed <<- "SF"
   	actions <<- c(actions, "See the Future")
+  	current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
   	Discard(player, "SF")
   	isNope <- Nope(player, count = 0, strat)
     if (isNope) {
@@ -467,8 +486,6 @@ SeeTheFuture <- function(player,strat) {
     } 
     print("FOR PRIVATE VIEWING ONLY")
     print(Deck[1:3])
-    current_prob = CalculateExplodeProbability(player)
-  	explode_probability <<- c(explode_probability, current_prob)
     return(F)
 }
 
@@ -520,6 +537,8 @@ Steal <- function(player, target = "", cards = "", strat) {
   			return(Steal(player, target = t, cards = cardset, strat))
   		}
   		actions <<- c(actions, "Steal")
+  		current_prob = CalculateExplodeProbability(player)
+  		explode_probability <<- c(explode_probability, current_prob)
   		lastcardplayed <<- cardset[1]
   		Discard(player, cardset)
   		isNope <- Nope(player, count = 0, strat)
@@ -532,9 +551,11 @@ Steal <- function(player, target = "", cards = "", strat) {
     }
   	if (!(t %in% otherPlayers) || Players[[t]][1] == "DEAD" || length(Players[[t]]) < 2) {
   		print("Cannot steal from this player")
-  		return(Steal(player, target = "", cards = cardset, strat))
+  		return(F)
   	}
   	actions <<- c(actions, "Steal")
+  	current_prob = CalculateExplodeProbability(player)
+  	explode_probability <<- c(explode_probability, current_prob)
   	lastcardplayed <<- cardset[1]
   	Discard(player, cardset)
   	isNope <- Nope(player, count = 0, strat)
@@ -558,8 +579,6 @@ Steal <- function(player, target = "", cards = "", strat) {
     }
     Players[[target]] <<- Players[[target]][-match(cd, Players[[target]])]
     Players[[player]] <<- c(Players[[player]], cd)
-    current_prob = CalculateExplodeProbability(player)
-  	explode_probability <<- c(explode_probability, current_prob)
   	return(F)
 }
 
@@ -590,11 +609,6 @@ CheckHand <- function(set, hand) {
 	  }
   }
 }
-
-
-
-
-    
     
 
 
