@@ -30,7 +30,7 @@ CalculateExplodeProbability <- function(player) {
   if ("DF" %in% Players[[player]]) {
     exprob = 0 
   } else {
-    num_kittens = length(Players) - deadcount + 1
+    num_kittens = length(Players) - deadcount - 1
     exprob = num_kittens / length(Deck)
   }
   return(exprob)
